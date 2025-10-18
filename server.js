@@ -67,9 +67,21 @@ function parseClass(t) {
     }
   }
   
-  // Buscar directamente "bard" en el texto ya que sabemos que está ahí
-  if (text.includes('bard')) {
-    return 'Bard';
+  // Buscar dinámicamente cualquier clase que aparezca en el texto
+  // Lista de clases conocidas de Lost Ark
+  const knownClasses = [
+    'berserker', 'paladin', 'gunlancer', 'destroyer', 'slayer', 'warlord', 'breaker',
+    'bard', 'sorceress', 'arcanist', 'summoner', 'artist', 'aeromancer', 'painter',
+    'wardancer', 'scrapper', 'soulfist', 'glaivier', 'striker',
+    'deathblade', 'shadowhunter', 'reaper', 'souleeter',
+    'sharpshooter', 'deadeye', 'gunslinger', 'machinist', 'scouter'
+  ];
+  
+  // Buscar cada clase en el texto
+  for (const className of knownClasses) {
+    if (text.includes(className)) {
+      return className.charAt(0).toUpperCase() + className.slice(1);
+    }
   }
   
   return ""; // No devolver nada si no encuentra la clase específica
@@ -198,8 +210,6 @@ async function getCharStats(context, region, charName) {
       const ilvl = parseIlvl(text);
       const cp = parseCP(text);
       const klass = parseClass(text);
-      
-      
       
       
       await page.close().catch(()=>{});
