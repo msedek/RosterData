@@ -46,6 +46,55 @@ function parseCP(t) {
   return m2 ? m2[1] : "";
 }
 
+// --- clases Lost Ark + parser robusto ---
+const LOST_ARK_CLASSES = [
+  // Warrior
+  "Berserker","Paladin","Gunlancer","Destroyer","Slayer","Warlord","Breaker",
+  // Mage
+  "Bard","Sorceress","Arcanist","Summoner","Artist","Aeromancer","Painter",
+  // Martial Artist (F)
+  "Wardancer","Scrapper","Soulfist","Glaivier",
+  // Martial Artist (M)
+  "Striker",
+  // Assassin
+  "Deathblade","Shadowhunter","Reaper","Souleeter",
+  // Gunner
+  "Sharpshooter","Deadeye","Gunslinger","Machinist","Scouter"
+];
+
+function parseClass(t) {
+  const text = squash(t).toLowerCase();
+  
+  // Buscar solo patrones específicos de clase del personaje
+  const classPatterns = [
+    /class[:\s]*([a-z]+)/i,
+    /character[:\s]*class[:\s]*([a-z]+)/i,
+    /job[:\s]*([a-z]+)/i,
+    /character[:\s]*type[:\s]*([a-z]+)/i
+  ];
+  
+  // Buscar patrones específicos
+  for (const pattern of classPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const foundClass = match[1];
+      if (LOST_ARK_CLASSES.some(c => c.toLowerCase() === foundClass)) {
+        return foundClass.charAt(0).toUpperCase() + foundClass.slice(1);
+      }
+    }
+  }
+  
+  // Buscar clases que aparecen como palabras aisladas en el texto
+  for (const c of LOST_ARK_CLASSES) {
+    const regex = new RegExp(`\\b${c.toLowerCase()}\\b`, 'g');
+    if (regex.test(text)) {
+      return c;
+    }
+  }
+  
+  return ""; // No devolver nada si no encuentra la clase específica
+}
+
 async function maybeChallenge(page) {
   try {
     const html = await page.content();
@@ -168,9 +217,11 @@ async function getCharStats(context, region, charName) {
       const text = await page.evaluate(() => document.body && (document.body.innerText || ""));
       const ilvl = parseIlvl(text);
       const cp = parseCP(text);
+      const klass = parseClass(text);
+      
+      
       await page.close().catch(()=>{});
       
-const klass = parseClass(text);
       if (ilvl && cp) return { name: charName, class: klass, ilvl, cp };
     } catch (e) {
       log("WARN char page:", url, e.message);
@@ -281,34 +332,3 @@ app.listen(PORT, () => log(`Roster CSV server on http://127.0.0.1:${PORT}`));
 process.on("SIGINT", async () => { try { await browser?.close(); } finally { process.exit(0); } });
 process.on("SIGTERM", async () => { try { await browser?.close(); } finally { process.exit(0); } });
 
-// --- clases Lost Ark + parser robusto ---
-const LOST_ARK_CLASSES = [
-  // Warrior
-  "Berserker","Paladin","Gunlancer","Destroyer","Slayer","Warlord","Breaker",
-  // Mage
-  "Bard","Sorceress","Arcanist","Summoner","Artist","Aeromancer","Painter",
-  // Martial Artist (F)
-  "Wardancer","Scrapper","Soulfist","Glaivier",
-  // Martial Artist (M)
-  "Striker",
-  // Assassin
-  "Deathblade","Shadowhunter","Reaper","Souleater",
-  // Gunner
-  "Sharpshooter","Deadeye","Gunslinger","Machinist","Scouter"
-];
-function parseClass(t) {
-  const text = squash(t).toLowerCase();
-  let hit = "";
-  for (const c of LOST_ARK_CLASSES) {
-    const rx = new RegExp(`\\b${c.replace(/[-/]/g,"[-/]")}(?:\\b|s\\b)`, "i");
-    if (rx.test(text)) {
-      if (c.length > hit.length) hit = c; // prioriza el match más largo
-    }
-  }
-  // normalizaciones comunes
-  if (hit === "Painter") hit = "Artist";
-  if (hit === "Warlord") hit = "Gunlancer";
-  if (hit === "Scouter") hit = "Machinist";
-  return hit;
-}
-// --- fin parser de clase ---
