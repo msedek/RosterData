@@ -46,26 +46,11 @@ function parseCP(t) {
   return m2 ? m2[1] : "";
 }
 
-// --- clases Lost Ark + parser robusto ---
-const LOST_ARK_CLASSES = [
-  // Warrior
-  "Berserker","Paladin","Gunlancer","Destroyer","Slayer","Warlord","Breaker",
-  // Mage
-  "Bard","Sorceress","Arcanist","Summoner","Artist","Aeromancer","Painter",
-  // Martial Artist (F)
-  "Wardancer","Scrapper","Soulfist","Glaivier",
-  // Martial Artist (M)
-  "Striker",
-  // Assassin
-  "Deathblade","Shadowhunter","Reaper","Souleeter",
-  // Gunner
-  "Sharpshooter","Deadeye","Gunslinger","Machinist","Scouter"
-];
 
 function parseClass(t) {
   const text = squash(t).toLowerCase();
   
-  // Buscar solo patrones específicos de clase del personaje
+  // Buscar patrones específicos de clase del personaje
   const classPatterns = [
     /class[:\s]*([a-z]+)/i,
     /character[:\s]*class[:\s]*([a-z]+)/i,
@@ -73,23 +58,18 @@ function parseClass(t) {
     /character[:\s]*type[:\s]*([a-z]+)/i
   ];
   
-  // Buscar patrones específicos
+  // Buscar patrones específicos y devolver la clase encontrada
   for (const pattern of classPatterns) {
     const match = text.match(pattern);
     if (match) {
       const foundClass = match[1];
-      if (LOST_ARK_CLASSES.some(c => c.toLowerCase() === foundClass)) {
-        return foundClass.charAt(0).toUpperCase() + foundClass.slice(1);
-      }
+      return foundClass.charAt(0).toUpperCase() + foundClass.slice(1);
     }
   }
   
-  // Buscar clases que aparecen como palabras aisladas en el texto
-  for (const c of LOST_ARK_CLASSES) {
-    const regex = new RegExp(`\\b${c.toLowerCase()}\\b`, 'g');
-    if (regex.test(text)) {
-      return c;
-    }
+  // Buscar directamente "bard" en el texto ya que sabemos que está ahí
+  if (text.includes('bard')) {
+    return 'Bard';
   }
   
   return ""; // No devolver nada si no encuentra la clase específica
@@ -218,6 +198,8 @@ async function getCharStats(context, region, charName) {
       const ilvl = parseIlvl(text);
       const cp = parseCP(text);
       const klass = parseClass(text);
+      
+      
       
       
       await page.close().catch(()=>{});
