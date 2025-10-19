@@ -105,8 +105,28 @@ function shouldRefreshCache() {
   }
 }
 
+// Función para verificar si la data del CSV está completa
+function isDataComplete(csv) {
+  if (!csv || csv.trim() === '') return false;
+  
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return false; // Debe tener al menos header + 1 personaje
+  
+  // Verificar que todas las líneas tengan los 4 campos completos
+  for (let i = 1; i < lines.length; i++) { // Saltar header
+    const fields = lines[i].split(',');
+    if (fields.length !== 4) return false;
+    
+    // Verificar que no haya campos vacíos (excepto el último que puede estar vacío por el formato)
+    const [name, className, ilvl, combatPower] = fields;
+    if (!name || !className || !ilvl) return false;
+  }
+  
+  return true;
+}
+
 // Función para actualizar caché de un personaje específico
-async function updateCharacterCache(region, name) {
+async function updateCharacterCache(region, name, forceUpdate = false) {
   const cacheKey = `${region}:${name}`;
   
   // Evitar múltiples actualizaciones simultáneas
@@ -114,6 +134,9 @@ async function updateCharacterCache(region, name) {
     log("Ya se está actualizando:", cacheKey);
     return;
   }
+  
+  // Guardar data anterior si existe
+  const previousData = cache.has(cacheKey) ? cache.get(cacheKey).data : null;
   
   let attempts = 0;
   const maxAttempts = 5; // Aumentar intentos para datos completos
@@ -129,27 +152,80 @@ async function updateCharacterCache(region, name) {
       });
       
       const csv = await scrapeRoster(region, name);
-      cache.set(cacheKey, { 
-        data: csv, 
-        timestamp: Date.now(), 
-        isUpdating: false 
-      });
       
-      log("Caché actualizado exitosamente:", cacheKey);
-      return; // Éxito, salir del bucle
+      // Verificar si la data está completa
+      if (isDataComplete(csv)) {
+        cache.set(cacheKey, { 
+          data: csv, 
+          timestamp: Date.now(), 
+          isUpdating: false 
+        });
+        log("Caché actualizado exitosamente con data completa:", cacheKey);
+        return; // Éxito, salir del bucle
+      } else {
+        log(`Data incompleta detectada para ${cacheKey} en intento ${attempts}/${maxAttempts}`);
+        
+        if (attempts < maxAttempts) {
+          log(`Reintentando para obtener data completa...`);
+          // Restaurar data anterior temporalmente
+          if (previousData) {
+            cache.set(cacheKey, { 
+              data: previousData, 
+              timestamp: Date.now(), 
+              isUpdating: false 
+            });
+          }
+        } else {
+          // Todos los intentos fallaron, mantener data anterior si existe
+          if (previousData && !forceUpdate) {
+            log(`Manteniendo data anterior para ${cacheKey} - data nueva incompleta`);
+            cache.set(cacheKey, { 
+              data: previousData, 
+              timestamp: Date.now(), 
+              isUpdating: false 
+            });
+          } else {
+            log(`No hay data anterior para ${cacheKey}, guardando data incompleta`);
+            cache.set(cacheKey, { 
+              data: csv, 
+              timestamp: Date.now(), 
+              isUpdating: false 
+            });
+          }
+          return;
+        }
+      }
       
     } catch (error) {
       log(`Error en intento ${attempts}/${maxAttempts} para ${cacheKey}:`, error.message);
       
       if (attempts < maxAttempts) {
         log(`Reintentando inmediatamente...`);
+        // Restaurar data anterior temporalmente
+        if (previousData) {
+          cache.set(cacheKey, { 
+            data: previousData, 
+            timestamp: Date.now(), 
+            isUpdating: false 
+          });
+        }
       } else {
         log("Todos los intentos fallaron para:", cacheKey);
-        cache.set(cacheKey, { 
-          data: null, 
-          timestamp: Date.now(), 
-          isUpdating: false 
-        });
+        // Mantener data anterior si existe
+        if (previousData && !forceUpdate) {
+          log(`Manteniendo data anterior para ${cacheKey} - todos los intentos fallaron`);
+          cache.set(cacheKey, { 
+            data: previousData, 
+            timestamp: Date.now(), 
+            isUpdating: false 
+          });
+        } else {
+          cache.set(cacheKey, { 
+            data: null, 
+            timestamp: Date.now(), 
+            isUpdating: false 
+          });
+        }
       }
     }
   }
