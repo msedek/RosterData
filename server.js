@@ -34,6 +34,8 @@ const PRIORITY_CHARACTERS = [
 
 const CACHE_REFRESH_INTERVAL = 6 * 60 * 60 * 1000; // 6 horas = 4 veces al día
 const CACHE_EXPIRY_TIME = 7 * 60 * 60 * 1000; // 7 horas de expiración
+const REFRESH_COOLDOWN_MINUTES = 300; // 300 minutos = 5 horas
+const LAST_REFRESH_FILE = path.join(__dirname, 'last_refresh.txt');
 
 let cache = new Map(); // { "region:name": { data, timestamp, isUpdating } }
 let refreshTimer = null;
@@ -56,6 +58,53 @@ function isPriorityCharacter(name) {
   );
 }
 
+// Funciones de control de tiempo para refrescos
+function getLastRefreshTime() {
+  try {
+    if (fs.existsSync(LAST_REFRESH_FILE)) {
+      const content = fs.readFileSync(LAST_REFRESH_FILE, 'utf8').trim();
+      // Convertir el formato "YYYY-MM-DD HH:mm:ss" a ISO string con zona horaria local
+      const date = new Date(content + 'Z'); // Agregar Z para indicar UTC
+      return date;
+    }
+  } catch (error) {
+    log("Error reading last refresh file:", error.message);
+  }
+  return null;
+}
+
+function updateLastRefreshTime() {
+  try {
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
+    fs.writeFileSync(LAST_REFRESH_FILE, timestamp);
+    log(`Last refresh time updated to: ${timestamp}`);
+  } catch (error) {
+    log("Error updating last refresh file:", error.message);
+  }
+}
+
+function shouldRefreshCache() {
+  const lastRefresh = getLastRefreshTime();
+  if (!lastRefresh) {
+    log("No last refresh time found, allowing refresh");
+    return true;
+  }
+  
+  const now = new Date();
+  const diffMinutes = (now - lastRefresh) / (1000 * 60);
+  
+  log(`Last refresh: ${lastRefresh.toISOString()}, Minutes since: ${Math.round(diffMinutes)}`);
+  
+  if (diffMinutes >= REFRESH_COOLDOWN_MINUTES) {
+    log(`Cooldown period (${REFRESH_COOLDOWN_MINUTES} minutes) has passed, allowing refresh`);
+    return true;
+  } else {
+    log(`Cooldown period (${REFRESH_COOLDOWN_MINUTES} minutes) not yet passed, skipping refresh`);
+    return false;
+  }
+}
+
 // Función para actualizar caché de un personaje específico
 async function updateCharacterCache(region, name) {
   const cacheKey = `${region}:${name}`;
@@ -66,43 +115,73 @@ async function updateCharacterCache(region, name) {
     return;
   }
   
-  try {
-    log("Actualizando caché para:", cacheKey);
-    cache.set(cacheKey, { 
-      data: null, 
-      timestamp: Date.now(), 
-      isUpdating: true 
-    });
-    
-    const csv = await scrapeRoster(region, name);
-    cache.set(cacheKey, { 
-      data: csv, 
-      timestamp: Date.now(), 
-      isUpdating: false 
-    });
-    
-    log("Caché actualizado exitosamente:", cacheKey);
-  } catch (error) {
-    log("Error actualizando caché:", cacheKey, error.message);
-    cache.set(cacheKey, { 
-      data: null, 
-      timestamp: Date.now(), 
-      isUpdating: false 
-    });
+  let attempts = 0;
+  const maxAttempts = 5; // Aumentar intentos para datos completos
+  
+  while (attempts < maxAttempts) {
+    try {
+      attempts++;
+      log(`Actualizando caché para: ${cacheKey} (intento ${attempts}/${maxAttempts})`);
+      cache.set(cacheKey, { 
+        data: null, 
+        timestamp: Date.now(), 
+        isUpdating: true 
+      });
+      
+      const csv = await scrapeRoster(region, name);
+      cache.set(cacheKey, { 
+        data: csv, 
+        timestamp: Date.now(), 
+        isUpdating: false 
+      });
+      
+      log("Caché actualizado exitosamente:", cacheKey);
+      return; // Éxito, salir del bucle
+      
+    } catch (error) {
+      log(`Error en intento ${attempts}/${maxAttempts} para ${cacheKey}:`, error.message);
+      
+      if (attempts < maxAttempts) {
+        log(`Reintentando inmediatamente...`);
+      } else {
+        log("Todos los intentos fallaron para:", cacheKey);
+        cache.set(cacheKey, { 
+          data: null, 
+          timestamp: Date.now(), 
+          isUpdating: false 
+        });
+      }
+    }
   }
 }
 
 // Función para actualizar todos los personajes prioritarios
-async function refreshPriorityCache() {
+async function refreshPriorityCache(updateTimestamp = false) {
+  // Verificar si debe hacer refresh basado en el tiempo
+  if (!shouldRefreshCache()) {
+    log("Skipping cache refresh due to cooldown period");
+    return;
+  }
+  
   log("Iniciando actualización de caché prioritario...");
   const region = "NAE";
   
-  // Actualizar todos los personajes prioritarios en paralelo
-  const updatePromises = PRIORITY_CHARACTERS.map(name => 
-    updateCharacterCache(region, name)
-  );
+  // Actualizar personajes prioritarios SECUENCIALMENTE para evitar sobrecarga del sitio
+  for (const name of PRIORITY_CHARACTERS) {
+    try {
+      log(`Actualizando personaje prioritario: ${name}`);
+      await updateCharacterCache(region, name);
+      log(`Completado: ${name}`);
+    } catch (error) {
+      log(`Error actualizando ${name}:`, error.message);
+    }
+  }
   
-  await Promise.allSettled(updatePromises);
+  // Solo actualizar el timestamp si se solicita explícitamente
+  if (updateTimestamp) {
+    updateLastRefreshTime();
+  }
+  
   log("Actualización de caché prioritario completada");
 }
 
@@ -147,18 +226,18 @@ async function initializeCache() {
   // Actualizar caché inicial de personajes prioritarios
   await refreshPriorityCache();
   
-  // Configurar actualización automática cada 6 horas
-  refreshTimer = setInterval(async () => {
-    try {
-      await refreshPriorityCache();
-      cleanExpiredCache();
-    } catch (error) {
-      log("Error en actualización automática de caché:", error.message);
-    }
-  }, CACHE_REFRESH_INTERVAL);
+  // Configurar actualización automática cada 6 horas - DESHABILITADO
+  // refreshTimer = setInterval(async () => {
+  //   try {
+  //     await refreshPriorityCache();
+  //     cleanExpiredCache();
+  //   } catch (error) {
+  //     log("Error en actualización automática de caché:", error.message);
+  //   }
+  // }, CACHE_REFRESH_INTERVAL);
   
-  // Limpiar caché expirado cada hora
-  setInterval(cleanExpiredCache, 60 * 60 * 1000);
+  // Limpiar caché expirado cada hora - DESHABILITADO
+  // setInterval(cleanExpiredCache, 60 * 60 * 1000);
   
   log("Sistema de caché inicializado correctamente");
 }
@@ -274,8 +353,8 @@ async function maybeChallenge(page) {
   } catch { return false; }
 }
 async function waitAndReloadAfterChallenge(page) {
-  await page.waitForTimeout(6000);
-  await page.reload({ waitUntil: "domcontentloaded", timeout: 45000 });
+  // await page.waitForTimeout(6000); // Removed timeout
+  await page.reload({ waitUntil: "domcontentloaded" });
 }
 
 // ---------- navegador único + contexto único (con fallback) ----------
@@ -347,9 +426,9 @@ async function getRosterNames(context, region, name) {
   const page = await context.newPage();
   log("GET roster names:", url);
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
     if (await maybeChallenge(page)) await waitAndReloadAfterChallenge(page);
-    await page.waitForTimeout(ROSTER_WAIT_MS);
+    // await page.waitForTimeout(ROSTER_WAIT_MS); // Removed timeout
 
     const anchors = await page.$$eval('a[href*="/character/"]', els =>
       els.map(a => a.getAttribute("href") || "")
@@ -380,75 +459,71 @@ async function getCharStats(context, region, charName) {
   const urls = [base, `${base}/profile`, `${base}/overview`];
 
   for (const url of urls) {
-    const page = await context.newPage();
-    try {
-      log("GET char stats:", url);
-      await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
-      if (await maybeChallenge(page)) await waitAndReloadAfterChallenge(page);
-      await page.waitForTimeout(PROFILE_WAIT_MS * 2);
-      const text = await page.evaluate(() => document.body && (document.body.innerText || ""));
-      const ilvl = parseIlvl(text);
-      const cp = parseCP(text);
-      const klass = parseClass(text);
-      
-      
-      await page.close().catch(()=>{});
-      
-      // Si tenemos al menos ilvl o cp, devolver los datos
-      if (ilvl || cp) return { name: charName, class: klass, ilvl: ilvl || "", cp: cp || "" };
-    } catch (e) {
-      log("WARN char page:", url, e.message);
-      try { await page.close(); } catch {}
-      
-      // Si es un error de red, esperar un poco y reintentar
-      if (e.message.includes("NS_ERROR_NET_EMPTY_RESPONSE") || e.message.includes("net::ERR_")) {
-        log("Network error detected, waiting before retry:", charName);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const page = await context.newPage();
+      try {
+        log(`GET char stats (intento ${attempt}/${maxRetries}):`, url);
+        await page.goto(url, { waitUntil: "networkidle" });
+        if (await maybeChallenge(page)) await waitAndReloadAfterChallenge(page);
+        // await page.waitForTimeout(PROFILE_WAIT_MS * 2); // Removed timeout
+        const text = await page.evaluate(() => document.body && (document.body.innerText || ""));
+        const ilvl = parseIlvl(text);
+        const cp = parseCP(text);
+        const klass = parseClass(text);
+        
+        await page.close().catch(()=>{});
+        
+        // Si tenemos al menos ilvl o cp, devolver los datos
+        if (ilvl || cp) return { name: charName, class: klass, ilvl: ilvl || "", cp: cp || "" };
+        
+        // Si no hay datos pero no es error de red, probar siguiente URL
+        break;
+        
+      } catch (e) {
+        log("WARN char page:", url, e.message);
+        try { await page.close(); } catch {}
+        
+        // Si es un error de red, reintentar la MISMA URL
+        if (e.message.includes("NS_ERROR_NET_EMPTY_RESPONSE") || e.message.includes("net::ERR_")) {
+          log(`NS_ERROR_NET_EMPTY_RESPONSE detected for character "${charName}" on URL: ${url} (attempt ${attempt}/${maxRetries})`);
+          if (attempt < maxRetries) {
+            const sleepTime = 10; // 10 segundos de espera
+            log(`Waiting ${sleepTime} seconds before retry for character: ${charName}`);
+            await new Promise(resolve => setTimeout(resolve, sleepTime * 1000));
+            continue; // Reintentar la misma URL
+          } else {
+            log(`All retries failed for character "${charName}" on URL: ${url}`);
+            break; // Salir del bucle de reintentos para esta URL
+          }
+        } else {
+          // Si no es error de red, no reintentar
+          break;
+        }
       }
     }
   }
   
-  // Si llegamos aquí, intentar una vez más con más tiempo de espera
-  log("Retrying with longer timeout for:", charName);
-  const page = await context.newPage();
-  try {
-    await page.goto(base, { waitUntil: "domcontentloaded", timeout: 60000 });
-    if (await maybeChallenge(page)) await waitAndReloadAfterChallenge(page);
-    await page.waitForTimeout(PROFILE_WAIT_MS * 2);
-    const text = await page.evaluate(() => document.body && (document.body.innerText || ""));
-    const ilvl = parseIlvl(text);
-    const cp = parseCP(text);
-    const klass = parseClass(text);
-    
-    await page.close().catch(()=>{});
-    return { name: charName, class: klass, ilvl: ilvl || "", cp: cp || "" };
-  } catch (e) {
-    log("Final retry failed for:", charName, e.message);
-    try { await page.close(); } catch {}
-    return { name: charName, class: "", ilvl: "", cp: "" };
-  }
+  // Si llegamos aquí, no se pudo obtener datos del personaje
+  log("Failed to get data for:", charName);
+  return { name: charName, class: "", ilvl: "", cp: "" };
 }
 
 async function scrapeRoster(region, name) {
   const context = await getContext();
   const names = await getRosterNames(context, region, name);
 
-  // Pool de concurrencia para stats
+  // Procesar personajes SECUENCIALMENTE para evitar sobrecarga del sitio
   const rows = [];
-  let idx = 0;
-  async function worker() {
-    while (idx < names.length) {
-      const myIndex = idx++;
-      const nm = names[myIndex];
-      const r = await getCharStats(context, region, nm);
-      if (r.name) rows.push(r);
-    }
+  for (const nm of names) {
+    const r = await getCharStats(context, region, nm);
+    if (r.name) rows.push(r);
   }
-  const workers = Array.from({ length: Math.max(1, Math.min(STATS_CONCURRENCY, names.length)) }, worker);
-  await Promise.all(workers);
 
   await persistCookies();
   if (!rows.length) throw new Error("EMPTY");
+
 
   rows.sort((a, b) => parseFloat(b.ilvl) - parseFloat(a.ilvl));
   const csv = ["Name,Class,iLvl,CombatPower"]
@@ -539,7 +614,7 @@ app.post("/cache/refresh/:name", async (req, res) => {
 // Endpoint para forzar actualización de todo el caché prioritario
 app.post("/cache/refresh-all", async (req, res) => {
   try {
-    await refreshPriorityCache();
+    await refreshPriorityCache(true); // Solo este endpoint actualiza el timestamp
     res.json({ 
       success: true, 
       message: "Caché prioritario actualizado completamente",
@@ -550,6 +625,20 @@ app.post("/cache/refresh-all", async (req, res) => {
       error: "Error actualizando caché", 
       message: error.message 
     });
+  }
+});
+
+// Nuevo endpoint que llama directamente a la función de actualización secuencialmente
+app.post("/cache/refresh-all-individual", async (req, res) => {
+  try {
+    await refreshPriorityCache(false); // No actualiza el timestamp
+    res.json({ 
+      success: true, 
+      message: "Refresh individual completado",
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Error en refresh individual", message: error.message });
   }
 });
 
