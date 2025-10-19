@@ -48,7 +48,9 @@ function parseCP(t) {
 
 
 function parseClass(t) {
-  const text = squash(t).toLowerCase();
+  // NO usar squash() porque destruye la estructura de líneas que necesito
+  const text = t.toLowerCase();
+  
   
   // Buscar patrones específicos de clase del personaje
   const classPatterns = [
@@ -67,20 +69,45 @@ function parseClass(t) {
     }
   }
   
-  // Buscar dinámicamente cualquier clase que aparezca en el texto
-  // Lista de clases conocidas de Lost Ark
-  const knownClasses = [
-    'berserker', 'paladin', 'gunlancer', 'destroyer', 'slayer', 'warlord', 'breaker',
-    'bard', 'sorceress', 'arcanist', 'summoner', 'artist', 'aeromancer', 'painter',
-    'wardancer', 'scrapper', 'soulfist', 'glaivier', 'striker',
-    'deathblade', 'shadowhunter', 'reaper', 'souleeter',
-    'sharpshooter', 'deadeye', 'gunslinger', 'machinist', 'scouter'
-  ];
-  
-  // Buscar cada clase en el texto
-  for (const className of knownClasses) {
-    if (text.includes(className)) {
-      return className.charAt(0).toUpperCase() + className.slice(1);
+  // Buscar la estructura específica: [servidor] [línea_vacía] [clase] [línea_vacía] [nombre_personaje]
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length - 4; i++) {
+    const currentLine = lines[i].trim();
+    const nextLine = lines[i + 1].trim();
+    const afterNextLine = lines[i + 2].trim();
+    const afterAfterNextLine = lines[i + 3].trim();
+    const afterAfterAfterNextLine = lines[i + 4].trim();
+    
+    // Buscar cualquier línea que parezca un servidor (no contiene números, no es muy larga, no es una clase conocida, no es una región)
+    const knownClasses = ['berserker', 'paladin', 'gunlancer', 'destroyer', 'slayer', 'breaker',
+                         'bard', 'sorceress', 'arcanist', 'summoner', 'artist', 'aeromancer', 'valkyrie',
+                         'wardancer', 'scrapper', 'soulfist', 'glaivier', 'striker',
+                         'deathblade', 'shadowhunter', 'reaper', 'souleeter',
+                         'sharpshooter', 'deadeye', 'gunslinger', 'machinist'];
+    
+    const knownRegions = ['north america east', 'north america west', 'europe central', 'europe west', 'south america'];
+    
+    const isServerLine = currentLine && 
+                        currentLine.length > 2 && 
+                        currentLine.length < 20 && 
+                        !/\d/.test(currentLine) && 
+                        !knownClasses.includes(currentLine.toLowerCase()) &&
+                        !knownRegions.includes(currentLine.toLowerCase()) &&
+                        !currentLine.includes('http') &&
+                        !currentLine.includes('href') &&
+                        !currentLine.includes('link') &&
+                        !currentLine.includes('america') &&
+                        !currentLine.includes('europe');
+    
+    
+    if (isServerLine) {
+      // Buscar la estructura: servidor -> línea vacía -> clase -> línea vacía -> nombre
+      if (!nextLine && afterNextLine && afterNextLine.length >= 3 && 
+          afterNextLine.length <= 20 && /^[a-z]+$/i.test(afterNextLine) &&
+          !afterAfterNextLine && afterAfterAfterNextLine && 
+          afterAfterAfterNextLine.length > 3) {
+        return afterNextLine.charAt(0).toUpperCase() + afterNextLine.slice(1);
+      }
     }
   }
   
