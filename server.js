@@ -299,8 +299,8 @@ async function getCachedRoster(region, name) {
 async function initializeCache() {
   log("Inicializando sistema de caché...");
   
-  // Actualizar caché inicial de personajes prioritarios
-  await refreshPriorityCache();
+  // NO hacer scraping automático al inicio - solo inicializar el sistema
+  // await refreshPriorityCache(); // COMENTADO - no queremos scraping automático
   
   // Configurar actualización automática cada 6 horas - DESHABILITADO
   // refreshTimer = setInterval(async () => {
@@ -315,7 +315,7 @@ async function initializeCache() {
   // Limpiar caché expirado cada hora - DESHABILITADO
   // setInterval(cleanExpiredCache, 60 * 60 * 1000);
   
-  log("Sistema de caché inicializado correctamente");
+  log("Sistema de caché inicializado correctamente (sin scraping automático)");
 }
 // ==========================================
 
