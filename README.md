@@ -7,7 +7,7 @@ A Node.js web scraper that extracts character roster data from Lost Ark and expo
 - Scrapes character roster data from uwuowo.mathi.moe
 - Extracts character names, classes, item levels, and combat power
 - Exports data to CSV format
-- Supports multiple regions (NAE, EU, etc.)
+- Supports multiple regions (NA, EU, etc.)
 - Uses Playwright for reliable web scraping
 - Express.js REST API for easy integration
 
@@ -40,7 +40,7 @@ The server will start on `http://localhost:3000`
 
 ### API Endpoints
 
-- `GET /:name/roster` - Get roster for a character (defaults to NAE region)
+- `GET /:name/roster` - Get roster for a character (defaults to NA region)
 - `GET /:region/:name/roster` - Get roster for a character in specific region
 - `GET /:name/raw` - Get raw CSV data (for Google Sheets integration)
 - `GET /:region/:name/raw` - Get raw CSV data for specific region
@@ -49,7 +49,7 @@ The server will start on `http://localhost:3000`
 ### Example Usage
 
 ```bash
-# Get roster for character "PlayerName" in NAE region
+# Get roster for character "PlayerName" in NA region
 curl http://localhost:3000/PlayerName/roster
 
 # Get roster for character "PlayerName" in EU region

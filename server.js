@@ -240,7 +240,7 @@ async function refreshPriorityCache(updateTimestamp = false) {
   }
   
   log("Iniciando actualización de caché prioritario...");
-  const region = "NAE";
+  const region = "NA";
   
   // Actualizar personajes prioritarios SECUENCIALMENTE para evitar sobrecarga del sitio
   for (const name of PRIORITY_CHARACTERS) {
@@ -335,6 +335,7 @@ function parseIlvl(t) {
   );
   return m ? (m[1] || m[2]) : "";
 }
+
 function parseCP(t) {
   // Buscar patrones más específicos primero
   let m = String(t).match(/Combat\s*Power[:\s]*([\d.,]+)/i);
@@ -353,7 +354,6 @@ function parseCP(t) {
   }
   return "";
 }
-
 
 function parseClass(t) {
   // NO usar squash() porque destruye la estructura de líneas que necesito
@@ -393,7 +393,7 @@ function parseClass(t) {
                          'deathblade', 'shadowhunter', 'reaper', 'souleeter',
                          'sharpshooter', 'deadeye', 'gunslinger', 'machinist'];
     
-    const knownRegions = ['north america east', 'north america west', 'europe central', 'europe west', 'south america'];
+    const knownRegions = ['CE', 'NA'];
     
     const isServerLine = currentLine && 
                         currentLine.length > 2 && 
@@ -428,6 +428,7 @@ async function maybeChallenge(page) {
     return /cdn-cgi\/challenge-platform|Just a moment/i.test(html);
   } catch { return false; }
 }
+
 async function waitAndReloadAfterChallenge(page) {
   // await page.waitForTimeout(6000); // Removed timeout
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -662,7 +663,7 @@ app.get("/stats", (_, res) => {
 
 // Endpoint para forzar actualización de caché de un personaje específico
 app.post("/cache/refresh/:name", async (req, res) => {
-  const region = "NAE";
+  const region = "NA";
   const { name } = req.params;
   
   if (!isPriorityCharacter(name)) {
@@ -719,7 +720,7 @@ app.post("/cache/refresh-all-individual", async (req, res) => {
 });
 
 app.get("/:name/roster", async (req, res) => {
-  const region = "NAE";
+  const region = "NA";
   const { name } = req.params;
   try {
     const csv = await withLock(() => getCachedRoster(region, name));
@@ -760,7 +761,7 @@ app.get("/:region/:name/roster", async (req, res) => {
 
 // --- endpoints "raw" para Google Sheets (sin Content-Disposition) ---
 app.get("/:name/raw", async (req, res) => {
-  const region = "NAE";
+  const region = "NA";
   const { name } = req.params;
   try {
     const csv = await withLock(() => getCachedRoster(region, name));
